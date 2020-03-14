@@ -756,7 +756,8 @@ void readCommand(void) {
           if (timeoutCntSerial_L-- <= 0)              // Timeout de-qualification
             timeoutFlagSerial_L = 0;                  // Timeout flag cleared           
         } else {
-          memcpy(&Sideboard_L, &Sideboard_Lnew, sizeof(Sideboard_L));	// Copy the new data 
+          memcpy(&Sideboard_L, &Sideboard_Lnew, sizeof(Sideboard_L));	// Copy the new data
+					
           Sideboard_Lnew.start = 0xFFFF;              // Change the Start Frame for timeout detection in the next cycle
           timeoutCntSerial_L  = 0;                    // Reset the timeout counter         
         }
@@ -771,7 +772,7 @@ void readCommand(void) {
           HAL_UART_Receive_DMA(&huart2, (uint8_t *)&Sideboard_Lnew, sizeof(Sideboard_Lnew));
         }
       }
-      timeoutFlagSerial = timeoutFlagSerial_L;
+  //    timeoutFlagSerial = timeoutFlagSerial_L;
     #endif
     #ifdef SIDEBOARD_SERIAL_USART3
       if (Sideboard_Rnew.start == SERIAL_START_FRAME && Sideboard_Rnew.checksum == (uint16_t)(Sideboard_Rnew.start ^ Sideboard_Rnew.angle ^ Sideboard_Rnew.angle_dot ^ Sideboard_Rnew.sensors)) {
@@ -780,6 +781,14 @@ void readCommand(void) {
             timeoutFlagSerial_R = 0;                  // Timeout flag cleared           
         } else {
           memcpy(&Sideboard_R, &Sideboard_Rnew, sizeof(Sideboard_R));	// Copy the new data 
+					if (Sideboard_R.angle > 200 )
+						{ cmd1 = 150;
+							cmd2 = 150;
+							}
+					else
+						{ cmd1 = 0;
+							cmd2 = 0;
+							}
           Sideboard_Rnew.start = 0xFFFF;              // Change the Start Frame for timeout detection in the next cycle
           timeoutCntSerial_R  = 0;                    // Reset the timeout counter         
         }
@@ -798,7 +807,15 @@ void readCommand(void) {
       timeoutFlagSerial = timeoutFlagSerial_R;
     #endif
     #if defined(SIDEBOARD_SERIAL_USART2) && defined(SIDEBOARD_SERIAL_USART3)
-      timeoutFlagSerial = timeoutFlagSerial_L | timeoutFlagSerial_R;
+     // timeoutFlagSerial = timeoutFlagSerial_L | timeoutFlagSerial_R;
+			 if (timeoutFlagSerial) {                           // In case of timeout bring the system to a Safe State
+          ctrlModReq  = 0;                              // OPEN_MODE request. This will bring the motor power to 0 in a controlled way
+          cmd1        = 0;
+          cmd2        = 0;
+        } else {
+          ctrlModReq  = ctrlModReqRaw;                  // Follow the Mode request
+        }
+				timeout = 0;
     #endif
 
     #ifdef VARIANT_HOVERCAR      
