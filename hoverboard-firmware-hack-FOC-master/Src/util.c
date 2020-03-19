@@ -49,7 +49,8 @@ extern I2C_HandleTypeDef hi2c2;
 #endif
 
 extern int16_t batVoltage;
-extern uint8_t backwardDrive;
+extern uint8_t backwardDrive_L;
+extern uint8_t backwardDrive_R;
 extern uint8_t buzzerFreq;              // global variable for the buzzer pitch. can be 1, 2, 3, 4, 5, 6, 7...
 extern uint8_t buzzerPattern;           // global variable for the buzzer pattern. can be 1, 2, 3, 4, 5, 6, 7...
 
@@ -757,18 +758,27 @@ void readCommand(void) {
             timeoutFlagSerial_L = 0;                  // Timeout flag cleared           
         } else {
           memcpy(&Sideboard_L, &Sideboard_Lnew, sizeof(Sideboard_L));	// Copy the new data
-							if (Sideboard_L.angle > 200 )
-						{ 
-							cmd1 = 150;
-							}
-					else if (Sideboard_L.angle <-200)
-						{ 
-							cmd1 = -150;
-							}
-						else
-						{
-							cmd1 = 0;
-						}
+//							if (Sideboard_L.angle > 200 )
+//						{ 
+//							cmd1 = 150;
+//							}
+//					else if (Sideboard_L.angle <-200)
+//						{ 
+//							cmd1 = -150;
+//							}
+//						else
+//						{
+//							cmd1 = 0;
+//						}
+					if (Sideboard_L.sensors == 0x0007)
+					{
+						cmd1 = 0;
+					}
+					else
+					{
+						cmd1 = 0;
+						enable = 0;
+					}
           Sideboard_Lnew.start = 0xFFFF;              // Change the Start Frame for timeout detection in the next cycle
           timeoutCntSerial_L  = 0;                    // Reset the timeout counter         
         }
@@ -792,18 +802,19 @@ void readCommand(void) {
             timeoutFlagSerial_R = 0;                  // Timeout flag cleared           
         } else {
           memcpy(&Sideboard_R, &Sideboard_Rnew, sizeof(Sideboard_R));	// Copy the new data 
-					if (Sideboard_R.angle > 200 )
-						{ 
-							cmd2 = 150;
-							}
-						else if (Sideboard_R.angle <-200)
-						{ 
-							cmd2 = -150;
-							}
-						else
-						{
-							cmd2 = 0;
-						}
+//					if (Sideboard_R.angle > 200 )
+//						{ 
+//							cmd2 = 150;
+//							}
+//						else if (Sideboard_R.angle <-200)
+//						{ 
+//							cmd2 = -150;
+//							}
+//						else
+//						{
+//							cmd2 = 0;
+//						}
+					
           Sideboard_Rnew.start = 0xFFFF;              // Change the Start Frame for timeout detection in the next cycle
           timeoutCntSerial_R  = 0;                    // Reset the timeout counter         
         }
@@ -860,7 +871,7 @@ void readCommand(void) {
  * Sideboard LEDs Handling
  * This function manages the leds behavior connected to the sideboard
  */
-void sideboardLeds(uint8_t *leds) {
+void sideboardLeds_L(uint8_t *leds) {
   #if defined(SIDEBOARD_SERIAL_USART2) || defined(SIDEBOARD_SERIAL_USART3)
     // Enable flag: use LED4 (bottom Blue)
     // enable == 1, turn on led
@@ -874,7 +885,8 @@ void sideboardLeds(uint8_t *leds) {
     // Backward Drive: use LED5 (upper Blue)
     // backwardDrive == 1, blink led
     // backwardDrive == 0, turn off led
-    if (backwardDrive && (main_loop_counter % 50 == 0)) {
+
+    if (backwardDrive_L & (main_loop_counter % 50 == 0)) {
       *leds ^= LED5_SET;
     }
 
@@ -928,6 +940,74 @@ void sideboardLeds(uint8_t *leds) {
   #endif
 }
 
+void sideboardLeds_R(uint8_t *leds) {
+  #if defined(SIDEBOARD_SERIAL_USART2) || defined(SIDEBOARD_SERIAL_USART3)
+    // Enable flag: use LED4 (bottom Blue)
+    // enable == 1, turn on led
+    // enable == 0, blink led
+    if (enable) {
+      *leds |= LED4_SET;
+    } else if (!enable && (main_loop_counter % 20 == 0)) {
+      *leds ^= LED4_SET;
+    }
+
+    // Backward Drive: use LED5 (upper Blue)
+    // backwardDrive == 1, blink led
+    // backwardDrive == 0, turn off led
+
+    if (backwardDrive_R & (main_loop_counter % 50 == 0)) {
+      *leds ^= LED5_SET;
+    }
+
+    // Brake: use LED5 (upper Blue)
+    // brakePressed == 1, turn on led
+    // brakePressed == 0, turn off led
+    #ifdef VARIANT_HOVERCAR
+      if (brakePressed) {
+        *leds |= LED5_SET;
+      } else if (!brakePressed && !backwardDrive) {
+        *leds &= ~LED5_SET;
+      }
+    #endif
+
+    // Battery Level Indicator: use LED1, LED2, LED3
+    if (main_loop_counter % BAT_BLINK_INTERVAL == 0) {              //  | RED (LED1) | YELLOW (LED3) | GREEN (LED2) |
+      if (batVoltage < BAT_DEAD) {                                  //  |     0      |       0       |      0       |
+        *leds &= ~LED1_SET & ~LED3_SET & ~LED2_SET;          
+      } else if (batVoltage < BAT_LVL1) {                           //  |     B      |       0       |      0       |
+        *leds ^= LED1_SET;
+        *leds &= ~LED3_SET & ~LED2_SET;
+      } else if (batVoltage < BAT_LVL2) {                           //  |     1      |       0       |      0       |
+        *leds |= LED1_SET;
+        *leds &= ~LED3_SET & ~LED2_SET;
+      } else if (batVoltage < BAT_LVL3) {                           //  |     0      |       B       |      0       |
+        *leds ^= LED3_SET;
+        *leds &= ~LED1_SET & ~LED2_SET;
+      } else if (batVoltage < BAT_LVL4) {                           //  |     0      |       1       |      0       |
+        *leds |= LED3_SET;
+        *leds &= ~LED1_SET & ~LED2_SET;
+      } else if (batVoltage < BAT_LVL5) {                           //  |     0      |       0       |      B       |
+        *leds ^= LED2_SET;
+        *leds &= ~LED1_SET & ~LED3_SET;
+      } else {                                                      //  |     0      |       0       |      1       |
+        *leds |= LED2_SET;
+        *leds &= ~LED1_SET & ~LED3_SET;
+      }
+    }
+
+    // Error handling
+    // Critical error:  LED1 on (RED)     + high pitch beep (hadled in main)
+    // Soft error:      LED3 on (YELLOW)  + low  pitch beep (hadled in main)
+    if (rtY_Left.z_errCode || rtY_Right.z_errCode) {
+      *leds |= LED1_SET;
+      *leds &= ~LED3_SET & ~LED2_SET;
+    }
+    if (timeoutFlagADC || timeoutFlagSerial) {
+      *leds |= LED3_SET;
+      *leds &= ~LED1_SET & ~LED2_SET;
+    }
+  #endif
+}
 /*
  * Sideboard Sensor Handling
  * This function manages the sideboards photo sensors.
@@ -1062,14 +1142,14 @@ void mixerFcn(int16_t rtu_speed, int16_t rtu_steer, int16_t *rty_speedR, int16_t
   int32_t tmp;
 
   prodSpeedl   = (int16_t)((rtu_speed * (int16_t)SPEED_COEFFICIENT) >> 14);
-  prodSpeedr   = (int16_t)((rtu_steer * (int16_t)STEER_COEFFICIENT) >> 14);
+  prodSpeedr   = (int16_t)((rtu_steer * (int16_t)SPEED_COEFFICIENT) >> 14);
 
-  tmp         = prodSpeedl;  
+  tmp         = prodSpeedr;  
   tmp         = CLAMP(tmp, -32768, 32767);  // Overflow protection
   *rty_speedR = (int16_t)(tmp >> 4);        // Convert from fixed-point to int 
   *rty_speedR = CLAMP(*rty_speedR, INPUT_MIN, INPUT_MAX);
 
-  tmp         =  prodSpeedr;
+  tmp         = prodSpeedl;
   tmp         = CLAMP(tmp, -32768, 32767);  // Overflow protection
   *rty_speedL = (int16_t)(tmp >> 4);        // Convert from fixed-point to int
   *rty_speedL = CLAMP(*rty_speedL, INPUT_MIN, INPUT_MAX);

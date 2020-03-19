@@ -89,7 +89,8 @@ extern SerialSideboard Sideboard_R;
 //------------------------------------------------------------------------
 // Global variables set here in main.c
 //------------------------------------------------------------------------
-uint8_t backwardDrive;
+uint8_t backwardDrive_L;
+uint8_t backwardDrive_R;
 volatile uint32_t main_loop_counter;
 
 //------------------------------------------------------------------------
@@ -194,9 +195,9 @@ int main(void) {
 
     readCommand();                        // Read Command: cmd1, cmd2
     calcAvgSpeed();                  		// Calculate average measured speed: speedAvg, speedAvgAbs
-		//Angle_fuzzy =(float)  Sideboard_L.angle/900.0f; 
-		//Angle_dot_fuzzy =(float)  Sideboard_L.angle_dot/900.0f  ;
-		//if (Sideboard_L.angle >200) cmd1=250;
+		Angle_fuzzy =(float)  Sideboard_L.angle/900.0f; 
+		Angle_dot_fuzzy =(float)  Sideboard_L.angle_dot/900.0f  ;
+		if (Sideboard_L.angle >200) cmd1=250;
 		
 		//cmd1 =(int16_t) (Fuzzy(Angle_fuzzy,Angle_dot_fuzzy,Fv) * 500); // get cmd1 from left sensor
 		//cmd2 =0;
@@ -265,7 +266,7 @@ int main(void) {
         #ifdef INVERT_L_DIRECTION
           pwml = -speedL;
         #else
-          pwml = speedL;
+          pwml = -speedL;
         #endif
       }
     #endif
@@ -369,11 +370,11 @@ int main(void) {
 
     // ####### SIDEBOARDS HANDLING #######
     #if defined(SIDEBOARD_SERIAL_USART2)
-      sideboardLeds(&sideboard_leds_L);
+      sideboardLeds_L(&sideboard_leds_L);
       sideboardSensors((uint8_t)Sideboard_L.sensors);
     #endif
     #if defined(SIDEBOARD_SERIAL_USART3)
-      sideboardLeds(&sideboard_leds_R);
+      sideboardLeds_R(&sideboard_leds_R);
       sideboardSensors((uint8_t)Sideboard_R.sensors);
     #endif
 
@@ -458,9 +459,9 @@ int main(void) {
       buzzerFreq    = 5;
       buzzerPattern = 42;
     } else if (BEEPS_BACKWARD && ((speed_l < -50 && speedAvg < 0) || MultipleTapBreak.b_multipleTap)) {  // backward beep
-      buzzerFreq    = 5;
-      buzzerPattern = 1;
-      backwardDrive = 1;
+      buzzerFreq    = 0;
+      buzzerPattern = 0;
+      backwardDrive = 0;
     } else {  // do not beep
       buzzerFreq    = 0;
       buzzerPattern = 0;
