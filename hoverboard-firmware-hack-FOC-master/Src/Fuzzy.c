@@ -6,16 +6,16 @@
 
 
 
-float Fuzzy(float x1,float x2,Fuzzy_Value y)
+float Fuzzy(float x1,float x2,Fuzzy_Value y, Membership_Value u)
 	{ float y_out;
 		
-		float x1_NB = mftrap(x1,-2,-1,-0.6,-0.4);
-		float x1_NM = mftrap(x1,-0.6,-0.4,-0.4,-0.05);
-		float x1_NS = mftrap(x1,-0.4,-0.05,-0.05,0);
-		float x1_ZE = mftrap(x1,-0.05,0,0,0.05) ;
-		float x1_PS = mftrap(x1,0,0.05,0.05,0.4);
-		float x1_PM = mftrap(x1,0.05,0.4,0.4,0.6);
-		float x1_PB = mftrap(x1,0.4,0.6,1,2);
+		float x1_NB = mftrap(x1,-2,-1,-u.B,-u.M);
+		float x1_NM = mftrap(x1,-u.B,-u.M,-u.M,-u.S);
+		float x1_NS = mftrap(x1,-u.M,-u.S,-u.S,0);
+		float x1_ZE = mftrap(x1,-u.S,-0.03,0.03,u.S) ;
+		float x1_PS = mftrap(x1,0,u.S,u.S,u.M);
+		float x1_PM = mftrap(x1,u.S,u.M,u.M,u.B);
+		float x1_PB = mftrap(x1,u.M,u.B,1,2);
 		float x2_NE = mftrap(x2,-2,-1,-1,0);
 		float x2_ZE = mftrap(x2,-1,0,0,1);
 		float x2_PO = mftrap(x2,0,1,1,2);
@@ -56,3 +56,4 @@ float mftrap(float x,float L, float C1, float C2, float R)
 		else y = 0;
 		return y;
 		}
+	

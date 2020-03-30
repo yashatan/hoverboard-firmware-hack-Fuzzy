@@ -91,6 +91,7 @@ extern SerialSideboard Sideboard_R;
 //------------------------------------------------------------------------
 uint8_t backwardDrive_L;
 uint8_t backwardDrive_R;
+uint8_t backwardDrive;
 volatile uint32_t main_loop_counter;
 
 //------------------------------------------------------------------------
@@ -108,7 +109,8 @@ typedef struct{
   uint16_t 	cmdLed;
   uint16_t  checksum;
 } SerialFeedback;
-static SerialFeedback Feedback;
+static SerialFeedback Feedback_L;
+static SerialFeedback Feedback_R;
 #endif
 #if defined(FEEDBACK_SERIAL_USART2)
 static uint8_t sideboard_leds_L;
@@ -129,9 +131,11 @@ static uint8_t sideboard_leds_R;
   static uint16_t transpotter_counter = 0;
 #endif
 
-static int16_t    speed_l;                // local variable for speed. -1000 to 1000
+static int16_t  speed_l;
+static int16_t  speed_r;
+static int16_t  speed;                 // local variable for speed. -1000 to 1000
 #ifndef VARIANT_TRANSPOTTER
-  static int16_t  speed_r;                // local variable for steering. -1000 to 1000
+  static int16_t  steer;                // local variable for steering. -1000 to 1000
   static int16_t  steerRateFixdt;       // local fixed-point variable for steering rate limiter
   static int16_t  speedRateFixdt;       // local fixed-point variable for speed rate limiter
   static int32_t  steerFixdt;           // local fixed-point variable for steering low-pass filter
@@ -139,9 +143,9 @@ static int16_t    speed_l;                // local variable for speed. -1000 to 
 #endif
 
 static uint32_t    inactivity_timeout_counter;
-static MultipleTap MultipleTapBreak;    // define multiple tap functionality for the Break pedal
-const Fuzzy_Value Fv ={-1.0f,-0.7f,-0.65f,-0.3f,0.0f,0.3f,0.65f,0.7f,1.0f	};
-float Angle_fuzzy, Angle_dot_fuzzy;
+static MultipleTap MultipleTapBreak;    // define multiple tap functiona  lity for the Break pedal
+const Fuzzy_Value Fv ={-1.0f,-0.8f,-0.65f,-0.25f,0.0f,0.25f,0.65f,0.8f,1.0f	};
+const Membership_Value Mv = {0.5,0.2,0.08};
 int main(void) {
 
   HAL_Init();
@@ -192,15 +196,9 @@ int main(void) {
 
   while(1) {
     HAL_Delay(DELAY_IN_MAIN_LOOP);        //delay in ms
-
     readCommand();                        // Read Command: cmd1, cmd2
     calcAvgSpeed();                  		// Calculate average measured speed: speedAvg, speedAvgAbs
-		Angle_fuzzy =(float)  Sideboard_L.angle/900.0f; 
-		Angle_dot_fuzzy =(float)  Sideboard_L.angle_dot/900.0f  ;
-		if (Sideboard_L.angle >200) cmd1=250;
-		
-		//cmd1 =(int16_t) (Fuzzy(Angle_fuzzy,Angle_dot_fuzzy,Fv) * 500); // get cmd1 from left sensor
-		//cmd2 =0;
+
     #ifndef VARIANT_TRANSPOTTER
       // ####### MOTOR ENABLING: Only if the initial input is very small (for SAFETY) #######
       if (enable == 0 && (!rtY_Left.z_errCode && !rtY_Right.z_errCode) && (cmd1 > -50 && cmd1 < 50) && (cmd2 > -50 && cmd2 < 50)){
@@ -234,7 +232,7 @@ int main(void) {
       #endif
 
       // ####### LOW-PASS FILTER #######
-			//cmd2=250;
+		
       rateLimiter16(cmd1, RATE, &steerRateFixdt);
       rateLimiter16(cmd2, RATE, &speedRateFixdt);
       filtLowPass32(steerRateFixdt >> 4, FILTER, &steerFixdt);
@@ -261,12 +259,12 @@ int main(void) {
         #ifdef INVERT_R_DIRECTION
           pwmr = speedR;
         #else
-          pwmr = -speedR;
+          pwmr = speedR;
         #endif
         #ifdef INVERT_L_DIRECTION
           pwml = -speedL;
         #else
-          pwml = -speedL;
+          pwml = speedL;
         #endif
       }
     #endif
@@ -403,34 +401,43 @@ int main(void) {
     // ####### FEEDBACK SERIAL OUT #######
     #if defined(FEEDBACK_SERIAL_USART2) || defined(FEEDBACK_SERIAL_USART3)
       if (main_loop_counter % 2 == 0) {    // Send data periodically every 10 ms
-        Feedback.start	        = (uint16_t)SERIAL_START_FRAME;
-        Feedback.cmd1           = (int16_t)cmd1;
-        Feedback.cmd2           = (int16_t)cmd2;
-        Feedback.speedR_meas	  = (int16_t)rtY_Right.n_mot;
-        Feedback.speedL_meas	  = (int16_t)rtY_Left.n_mot;
-        Feedback.batVoltage	    = (int16_t)(batVoltage * BAT_CALIB_REAL_VOLTAGE / BAT_CALIB_ADC);
-        Feedback.boardTemp	    = (int16_t)board_temp_deg_c;
-
+        Feedback_L.start	        = (uint16_t)SERIAL_START_FRAME;
+        Feedback_L.cmd1           = (int16_t)cmd1;
+        Feedback_L.cmd2           = (int16_t)cmd2;
+        Feedback_L.speedR_meas	  = (int16_t)rtY_Right.n_mot;
+        Feedback_L.speedL_meas	  = (int16_t)rtY_Left.n_mot;
+        Feedback_L.batVoltage	    = (int16_t)(batVoltage * BAT_CALIB_REAL_VOLTAGE / BAT_CALIB_ADC);
+        Feedback_L.boardTemp	    = (int16_t)board_temp_deg_c;
+				
+			  Feedback_R.start	        = (uint16_t)SERIAL_START_FRAME;
+        Feedback_R.cmd1           = (int16_t)cmd1;
+        Feedback_R.cmd2           = (int16_t)cmd2;
+        Feedback_R.speedR_meas	  = (int16_t)rtY_Right.n_mot;
+        Feedback_R.speedL_meas	  = (int16_t)rtY_Left.n_mot;
+        Feedback_R.batVoltage	    = (int16_t)(batVoltage * BAT_CALIB_REAL_VOLTAGE / BAT_CALIB_ADC);
+        Feedback_R.boardTemp	    = (int16_t)board_temp_deg_c;
+				
         #if defined(FEEDBACK_SERIAL_USART2)
-          if(DMA1_Channel7->CNDTR == 0) {
-            Feedback.cmdLed         = (uint16_t)sideboard_leds_L;
-            Feedback.checksum       = (uint16_t)(Feedback.start ^ Feedback.cmd1 ^ Feedback.cmd2 ^ Feedback.speedR_meas ^ Feedback.speedL_meas 
-                                               ^ Feedback.batVoltage ^ Feedback.boardTemp ^ Feedback.cmdLed);
+          if(DMA1_Channel7->CNDTR == 0 ) {
+            Feedback_L.cmdLed         = (uint16_t)sideboard_leds_L;
+            Feedback_L.checksum       = (uint16_t)(Feedback_L.start ^ Feedback_L.cmd1 ^ Feedback_L.cmd2 ^ Feedback_L.speedR_meas ^ Feedback_L.speedL_meas 
+                                               ^ Feedback_L.batVoltage ^ Feedback_L.boardTemp ^ Feedback_L.cmdLed);
             DMA1_Channel7->CCR     &= ~DMA_CCR_EN;
-            DMA1_Channel7->CNDTR    = sizeof(Feedback);
-            DMA1_Channel7->CMAR     = (uint32_t)&Feedback;
+            DMA1_Channel7->CNDTR    = sizeof(Feedback_L);
+            DMA1_Channel7->CMAR     = (uint32_t)&Feedback_L;
             DMA1_Channel7->CCR     |= DMA_CCR_EN;          
           }
         #endif
         #if defined(FEEDBACK_SERIAL_USART3)
-          if(DMA1_Channel2->CNDTR == 0) {
-            Feedback.cmdLed         = (uint16_t)sideboard_leds_R;
-            Feedback.checksum       = (uint16_t)(Feedback.start ^ Feedback.cmd1 ^ Feedback.cmd2 ^ Feedback.speedR_meas ^ Feedback.speedL_meas 
-                                               ^ Feedback.batVoltage ^ Feedback.boardTemp ^ Feedback.cmdLed);
+          if(DMA1_Channel2->CNDTR == 0 ) {
+            Feedback_R.cmdLed         = (uint16_t)sideboard_leds_R;
+            Feedback_R.checksum       = (uint16_t)(Feedback_R.start ^ Feedback_R.cmd1 ^ Feedback_R.cmd2 ^ Feedback_R.speedR_meas ^ Feedback_R.speedL_meas 
+                                               ^ Feedback_R.batVoltage ^ Feedback_R.boardTemp ^ Feedback_R.cmdLed);
             DMA1_Channel2->CCR     &= ~DMA_CCR_EN;
-            DMA1_Channel2->CNDTR    = sizeof(Feedback);
-            DMA1_Channel2->CMAR     = (uint32_t)&Feedback;
+            DMA1_Channel2->CNDTR    = sizeof(Feedback_R);
+            DMA1_Channel2->CMAR     = (uint32_t)&Feedback_R;
             DMA1_Channel2->CCR     |= DMA_CCR_EN;          
+					//	Feedback.cmdLed = (uint16_t) sideboard_leds_L;
           }
         #endif            
       }
@@ -461,11 +468,14 @@ int main(void) {
     } else if (BEEPS_BACKWARD && ((speed_l < -50 && speedAvg < 0) || MultipleTapBreak.b_multipleTap)) {  // backward beep
       buzzerFreq    = 0;
       buzzerPattern = 0;
-      backwardDrive = 0;
-    } else {  // do not beep
+      backwardDrive_L = 1;
+    } else if ((BEEPS_BACKWARD && ((speed_r < -50 && speedAvg < 0) || MultipleTapBreak.b_multipleTap))) {
+			backwardDrive_R = 1;
+		}	else {  // do not beep
       buzzerFreq    = 0;
       buzzerPattern = 0;
-      backwardDrive = 0;
+      backwardDrive_L = 0;
+			backwardDrive_R = 0;
     }
 
 

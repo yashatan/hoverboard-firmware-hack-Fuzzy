@@ -85,7 +85,7 @@ void UART2_Init(void) {
   #if defined(CONTROL_SERIAL_USART2) || defined(SIDEBOARD_SERIAL_USART2)
     huart2.Init.Mode        = UART_MODE_TX_RX;
   #elif defined(DEBUG_SERIAL_USART2)
-    huart2.Init.Mode        = UART_MODE_TX;
+    huart2.Init.Mode       f = UART_MODE_TX;
   #endif
   HAL_UART_Init(&huart2);
 

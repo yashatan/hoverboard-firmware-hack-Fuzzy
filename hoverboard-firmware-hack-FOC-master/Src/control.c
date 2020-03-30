@@ -10,7 +10,7 @@ TIM_HandleTypeDef TimHandle;
 uint8_t ppm_count = 0;
 uint32_t timeout = 100;
 uint8_t nunchuk_data[6] = {0};
-
+uint16_t init_cnt;
 uint8_t i2cBuffer[2];
 
 extern I2C_HandleTypeDef hi2c2;

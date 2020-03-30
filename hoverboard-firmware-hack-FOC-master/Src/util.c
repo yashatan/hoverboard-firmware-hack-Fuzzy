@@ -29,7 +29,7 @@
 #include "util.h"
 #include "BLDC_controller.h"
 #include "rtwtypes.h"
-
+#include "Fuzzy.h"
 #if defined(DEBUG_I2C_LCD) || defined(SUPPORT_LCD)
 #include "hd44780.h"
 #endif
@@ -51,11 +51,12 @@ extern I2C_HandleTypeDef hi2c2;
 extern int16_t batVoltage;
 extern uint8_t backwardDrive_L;
 extern uint8_t backwardDrive_R;
+extern uint8_t backwardDrive;
 extern uint8_t buzzerFreq;              // global variable for the buzzer pitch. can be 1, 2, 3, 4, 5, 6, 7...
 extern uint8_t buzzerPattern;           // global variable for the buzzer pattern. can be 1, 2, 3, 4, 5, 6, 7...
-
+extern const Fuzzy_Value Fv;
 extern uint8_t enable;                  // global variable for motor enable
-
+extern const Membership_Value Mv;
 extern uint8_t nunchuk_data[6];
 extern volatile uint32_t timeout;       // global variable for timeout
 extern volatile uint32_t main_loop_counter;
@@ -93,7 +94,10 @@ int16_t  speedAvg;                      // average measured speed
 int16_t  speedAvgAbs;                   // average measured speed in absolute
 uint8_t  timeoutFlagADC    = 0;         // Timeout Flag for ADC Protection:    0 = OK, 1 = Problem detected (line disconnected or wrong ADC data)
 uint8_t  timeoutFlagSerial = 0;         // Timeout Flag for Rx Serial command: 0 = OK, 1 = Problem detected (line disconnected or wrong Rx data)
-
+uint8_t  autolevelcomplete_flag = 0; //
+uint8_t  photosensor_L;
+uint8_t  photosensor_R;
+uint8_t  firststep_flag;
 uint8_t  ctrlModReqRaw = CTRL_MOD_REQ;
 uint8_t  ctrlModReq    = CTRL_MOD_REQ;  // Final control mode request 
 
@@ -750,7 +754,10 @@ void readCommand(void) {
       timeout = 0;
     #endif
 
-
+extern uint16_t init_cnt;
+		
+	
+		
     #ifdef SIDEBOARD_SERIAL_USART2
       if (Sideboard_Lnew.start == SERIAL_START_FRAME && Sideboard_Lnew.checksum == (uint16_t)(Sideboard_Lnew.start ^ Sideboard_Lnew.angle ^ Sideboard_Lnew.angle_dot ^  Sideboard_Lnew.sensors)) {
         if (timeoutFlagSerial_L) {                    // Check for previous timeout flag  
@@ -758,27 +765,42 @@ void readCommand(void) {
             timeoutFlagSerial_L = 0;                  // Timeout flag cleared           
         } else {
           memcpy(&Sideboard_L, &Sideboard_Lnew, sizeof(Sideboard_L));	// Copy the new data
-//							if (Sideboard_L.angle > 200 )
-//						{ 
-//							cmd1 = 150;
-//							}
-//					else if (Sideboard_L.angle <-200)
-//						{ 
-//							cmd1 = -150;
-//							}
-//						else
-//						{
-//							cmd1 = 0;
-//						}
-					if (Sideboard_L.sensors == 0x0007)
+					float	Angle_fuzzy     =     (float)  Sideboard_L.angle;//7000.0f;
+					float Angle_dot_fuzzy =     (float) Sideboard_L.angle_dot;
+					if (init_cnt <305) init_cnt++; // make delay for MPU converge
+					if (init_cnt > 250 && !autolevelcomplete_flag)
+					{ 
+						int16_t tmpcmd = (int16_t) ((Angle_fuzzy/100.0f *12.0f) +  (Angle_dot_fuzzy/100.0f * 1.0f));
+						cmd1 = CLAMP(tmpcmd,-90,80);
+				}
+					else cmd1=0;
+				if (!photosensor_L && Sideboard_L.sensors == 0x0007)
 					{
-						cmd1 = 0;
+						if (!autolevelcomplete_flag) autolevelcomplete_flag = SET;
+						shortBeep(6);
+						shortBeep(4);
+						photosensor_L = SET;
 					}
-					else
+					else if (photosensor_L && !(Sideboard_L.sensors == 0x0007))
 					{
-						cmd1 = 0;
-						enable = 0;
+						photosensor_L = RESET;
+            if (photosensor_R == RESET) firststep_flag = SET;
 					}
+				if (photosensor_L ==SET)
+				{
+        //  if ((Angle_fuzzy/7000.0f > Mv.B) || (Angle_fuzzy/7000.0f < -Mv.B) ) shortBeep(1);
+        //  else if ((Angle_fuzzy/7000.0f > Mv.M) || (Angle_fuzzy/7000.0f  < -Mv.M) ) shortBeep(4);
+        //  else if ((Angle_fuzzy/7000.0f > Mv.S) || (Angle_fuzzy/7000.0f < -Mv.S) ) shortBeep(8);
+          if (photosensor_R) firststep_flag =RESET;
+          if (firststep_flag)
+            if (ctrlModReq == 2) 
+                cmd1 = (int16_t) (Fuzzy(Angle_fuzzy/7000.0f,Angle_dot_fuzzy/5000.0f,Fv,Mv) * 50);
+            else 
+                cmd1 = (int16_t) (Fuzzy(Angle_fuzzy/7000.0f,Angle_dot_fuzzy/5000.0f,Fv,Mv) * 300);
+          else
+            cmd1 = (int16_t) (Fuzzy(Angle_fuzzy/7000.0f,Angle_dot_fuzzy/5000.0f,Fv,Mv) * 300); 
+				}
+
           Sideboard_Lnew.start = 0xFFFF;              // Change the Start Frame for timeout detection in the next cycle
           timeoutCntSerial_L  = 0;                    // Reset the timeout counter         
         }
@@ -793,6 +815,7 @@ void readCommand(void) {
           HAL_UART_Receive_DMA(&huart2, (uint8_t *)&Sideboard_Lnew, sizeof(Sideboard_Lnew));
         }
       }
+			
       timeoutFlagSerial = timeoutFlagSerial_L;
     #endif
     #ifdef SIDEBOARD_SERIAL_USART3
@@ -802,20 +825,43 @@ void readCommand(void) {
             timeoutFlagSerial_R = 0;                  // Timeout flag cleared           
         } else {
           memcpy(&Sideboard_R, &Sideboard_Rnew, sizeof(Sideboard_R));	// Copy the new data 
-//					if (Sideboard_R.angle > 200 )
-//						{ 
-//							cmd2 = 150;
-//							}
-//						else if (Sideboard_R.angle <-200)
-//						{ 
-//							cmd2 = -150;
-//							}
-//						else
-//						{
-//							cmd2 = 0;
-//						}
-					
-          Sideboard_Rnew.start = 0xFFFF;              // Change the Start Frame for timeout detection in the next cycle
+					float	Angle_fuzzy =(float)  Sideboard_R.angle;
+					float Angle_dot_fuzzy = (float) Sideboard_R.angle_dot;	
+			if (init_cnt > 250 && !autolevelcomplete_flag)
+					{ 
+					//	cmd1 = (int16_t) ((Angle_fuzzy/100.0f *2.70f) +  (Angle_dot_fuzzy/100.0f * 0.15f));
+					 int16_t tmpcmd = (int16_t) ((Angle_fuzzy/100.0f *12.0f) +  (Angle_dot_fuzzy/100.0f * 1.0f));
+						cmd2 = CLAMP(tmpcmd,-90,80);
+				}
+					else cmd2 = 0;
+				if (!photosensor_R && Sideboard_R.sensors == 0x0007)
+					{
+						if (!autolevelcomplete_flag) autolevelcomplete_flag = SET;
+						shortBeep(6);
+						shortBeep(4);
+						photosensor_R = SET;
+            if (photosensor_R) firststep_flag == RESET;
+					}
+					else if (photosensor_R && !(Sideboard_R.sensors == 0x0007))
+					{
+						photosensor_R = RESET;
+            if (!photosensor_L) firststep_flag == SET;
+					}
+				if (photosensor_R)
+				{
+        //  if ((Angle_fuzzy/7000.0f > Mv.B) || (Angle_fuzzy/7000.0f < -Mv.B) ) shortBeep(1);
+        //  else if ((Angle_fuzzy/7000.0f > Mv.M) || (Angle_fuzzy/7000.0f < -Mv.M) ) shortBeep(4);
+        //  else if ((Angle_fuzzy/7000.0f > Mv.S) || (Angle_fuzzy/7000.0f < -Mv.S) ) shortBeep(8);
+          if (firststep_flag)
+            if (ctrlModReq == 2) 
+                cmd2 = (int16_t) (Fuzzy(Angle_fuzzy/7000.0f,Angle_dot_fuzzy/5000.0f,Fv,Mv) * 50);
+            else 
+                cmd2 = (int16_t) (Fuzzy(Angle_fuzzy/7000.0f,Angle_dot_fuzzy/5000.0f,Fv,Mv) * 300);
+          else 
+            cmd2 = (int16_t) (Fuzzy(Angle_fuzzy/7000.0f,Angle_dot_fuzzy/5000.0f,Fv,Mv) * 300);
+				}
+
+          Sideboard_Rnew.start = 0xFFFF;              // Change the Sart Frame for timeout detection in the next cycle
           timeoutCntSerial_R  = 0;                    // Reset the timeout counter         
         }
       } else {
@@ -839,7 +885,12 @@ void readCommand(void) {
           cmd1        = 0;
           cmd2        = 0;
         } else {
-          ctrlModReq  = ctrlModReqRaw;                  // Follow the Mode request
+          if (photosensor_R && photosensor_L)
+          {ctrlModReq = 2;}
+          else{
+            ctrlModReq  = ctrlModReqRaw; 
+          }
+                          // Follow the Mode request
         }
 				timeout = 0;
     #endif
@@ -920,7 +971,7 @@ void sideboardLeds_L(uint8_t *leds) {
       } else if (batVoltage < BAT_LVL5) {                           //  |     0      |       0       |      B       |
         *leds ^= LED2_SET;
         *leds &= ~LED1_SET & ~LED3_SET;
-      } else {                                                      //  |     0      |       0       |      1       |
+      } else{                                                      //  |     0      |       0       |      1       |
         *leds |= LED2_SET;
         *leds &= ~LED1_SET & ~LED3_SET;
       }
@@ -965,7 +1016,7 @@ void sideboardLeds_R(uint8_t *leds) {
     #ifdef VARIANT_HOVERCAR
       if (brakePressed) {
         *leds |= LED5_SET;
-      } else if (!brakePressed && !backwardDrive) {
+      } else if (!brakePressed && !backwardDrive_R) {
         *leds &= ~LED5_SET;
       }
     #endif
@@ -977,22 +1028,16 @@ void sideboardLeds_R(uint8_t *leds) {
       } else if (batVoltage < BAT_LVL1) {                           //  |     B      |       0       |      0       |
         *leds ^= LED1_SET;
         *leds &= ~LED3_SET & ~LED2_SET;
-      } else if (batVoltage < BAT_LVL2) {                           //  |     1      |       0       |      0       |
+      } else if (!photosensor_L && !photosensor_R) {                //  |     1      |       0       |      0       |
         *leds |= LED1_SET;
-        *leds &= ~LED3_SET & ~LED2_SET;
-      } else if (batVoltage < BAT_LVL3) {                           //  |     0      |       B       |      0       |
-        *leds ^= LED3_SET;
-        *leds &= ~LED1_SET & ~LED2_SET;
-      } else if (batVoltage < BAT_LVL4) {                           //  |     0      |       1       |      0       |
-        *leds |= LED3_SET;
-        *leds &= ~LED1_SET & ~LED2_SET;
-      } else if (batVoltage < BAT_LVL5) {                           //  |     0      |       0       |      B       |
+        *leds &= ~LED3_SET & ~LED2_SET; 
+      } else if (photosensor_R ^ photosensor_L) {                   //  |     0      |       0       |      B       |
         *leds ^= LED2_SET;
-        *leds &= ~LED1_SET & ~LED3_SET;
-      } else {                                                      //  |     0      |       0       |      1       |
+        *leds &= ~LED3_SET & ~LED2_SET;
+      } else if (photosensor_R && photosensor_L) {                   //  |     0      |       0       |      1       |
         *leds |= LED2_SET;
         *leds &= ~LED1_SET & ~LED3_SET;
-      }
+      } 
     }
 
     // Error handling

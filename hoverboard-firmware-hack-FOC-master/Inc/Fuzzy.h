@@ -13,5 +13,12 @@ typedef struct{
 		float PM;
 		float PB;
 	} Fuzzy_Value;
+typedef struct{
+    float B;
+		float M;
+		float S;
+	} Membership_Value;
+
 float mftrap(float x,float L, float C1, float C2, float R);
-float Fuzzy(float x1,float x2,Fuzzy_Value y);
+float Fuzzy(float x1,float x2,Fuzzy_Value y, Membership_Value u);
+	
