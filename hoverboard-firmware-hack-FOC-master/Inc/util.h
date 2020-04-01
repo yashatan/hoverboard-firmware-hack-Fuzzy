@@ -72,7 +72,8 @@ void poweroffPressCheck(void);
 
 // Read Command Function
 void readCommand(void);
-
+// Auto Level Function
+void Auto_level(float Angle, float Angle_dot, int16_t* cmd);
 // Sideboard functions
 void sideboardLeds_L(uint8_t *leds);
 void sideboardLeds_R(uint8_t *leds);

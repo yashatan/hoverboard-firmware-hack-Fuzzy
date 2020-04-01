@@ -153,7 +153,8 @@ void DMA1_Channel1_IRQHandler(void) {
   /* Make sure to stop BOTH motors in case of an error */
   enableFin = enable && !rtY_Left.z_errCode && !rtY_Right.z_errCode;
  
-  // ========================= LEFT MOTOR ============================ 
+
+      // ========================= LEFT MOTOR ============================ 
     // Get hall sensors values
     uint8_t hall_ul = !(LEFT_HALL_U_PORT->IDR & LEFT_HALL_U_PIN);
     uint8_t hall_vl = !(LEFT_HALL_V_PORT->IDR & LEFT_HALL_V_PIN);
@@ -186,7 +187,6 @@ void DMA1_Channel1_IRQHandler(void) {
     LEFT_TIM->LEFT_TIM_V    = (uint16_t)CLAMP(vl + pwm_res / 2, pwm_margin, pwm_res-pwm_margin);
     LEFT_TIM->LEFT_TIM_W    = (uint16_t)CLAMP(wl + pwm_res / 2, pwm_margin, pwm_res-pwm_margin);
   // =================================================================
-  
 
   // ========================= RIGHT MOTOR ===========================  
     // Get hall sensors values
@@ -221,6 +221,8 @@ void DMA1_Channel1_IRQHandler(void) {
     RIGHT_TIM->RIGHT_TIM_V  = (uint16_t)CLAMP(vr + pwm_res / 2, pwm_margin, pwm_res-pwm_margin);
     RIGHT_TIM->RIGHT_TIM_W  = (uint16_t)CLAMP(wr + pwm_res / 2, pwm_margin, pwm_res-pwm_margin);
   // =================================================================
+
+
 
   /* Indicate task complete */
   OverrunFlag = false;
