@@ -626,7 +626,7 @@ void poweroffPressCheck(void) {
           HAL_Delay(10);
           if (cnt_press++ == 3 * 100) { shortBeep(5); }          
         }
-        if (cnt_press >= 3 * 100) {                         // Check if press is more than 5 sec
+        if (cnt_press >= 3 * 100) {                         // Check if press is more than 3 sec
           HAL_Delay(500);        
           if (HAL_GPIO_ReadPin(BUTTON_PORT, BUTTON_PIN)) {  // Double press: Toggle Auto-level function
             while(HAL_GPIO_ReadPin(BUTTON_PORT, BUTTON_PIN)) { HAL_Delay(10); }  
@@ -634,7 +634,7 @@ void poweroffPressCheck(void) {
             autolevelenable_save ^= 1;
             save_hover_valid = 1;
             shortBeep(5);
-          } else {                                          // Long press: Calibrate ADC Limits
+          } else {                                          // Long press: Calibrate Angle
           }
         } else {                                            // Short press: power off
           poweroff();
@@ -813,9 +813,13 @@ void readCommand(void) {
           memcpy(&Sideboard_L, &Sideboard_Lnew, sizeof(Sideboard_L));	// Copy the new data
 					float	Angle_fuzzy     =     (float)  Sideboard_L.angle;
 					float Angle_dot_fuzzy =     (float)  Sideboard_L.angle_dot;
+          
 					//=======Auto Level Function========//
 					if ((init_cnt++>250) && !autoleveldeactive_flag && autolevelenable_flag) Auto_level(Angle_fuzzy, Angle_dot_fuzzy, &cmd1);
           else cmd1=0;
+
+
+
           //=====Check Photosensor=====//
 				  if (!photosensor_L && Sideboard_L.sensors == 0x0007)
 				  {
@@ -830,6 +834,9 @@ void readCommand(void) {
 						photosensor_L = RESET;
             if (!photosensor_R) firststep_flag = SET;
 					}
+
+
+
           //=====Balacing Fuction with Fuzzy controller=====//  
           if (photosensor_L ==SET)
           {
@@ -865,9 +872,15 @@ void readCommand(void) {
           memcpy(&Sideboard_R, &Sideboard_Rnew, sizeof(Sideboard_R));	// Copy the new data 
 					float	Angle_fuzzy     =     (float)  Sideboard_L.angle;
 					float Angle_dot_fuzzy =     (float)  Sideboard_L.angle_dot;
+
+
+
           //=======Auto Level Function========//
 			    if ((init_cnt > 250) && !autoleveldeactive_flag && autolevelenable_flag)	Auto_level(Angle_fuzzy, Angle_dot_fuzzy, &cmd2);
 					else cmd2 = 0;
+
+
+
           //=====Check Photosensor=====//
 				  if (!photosensor_R && Sideboard_R.sensors == 0x0007)
             {
@@ -882,6 +895,9 @@ void readCommand(void) {
               photosensor_R = RESET;
               if (!photosensor_L) firststep_flag = SET;
             }
+
+
+
           //=====Balacing Fuction with Fuzzy controller=====//  
 				  if (photosensor_R)
 				    {
@@ -963,8 +979,12 @@ void sideboardLeds_L(uint8_t *leds) {
     // backwardDrive == 1, blink led
     // backwardDrive == 0, turn off led
 
-    if (backwardDrive_L & (main_loop_counter % 50 == 0)) {
-      *leds ^= LED5_SET;
+    if (backwardDrive_R) {
+      *leds |= LED5_SET;
+    }
+    else
+    {
+      *leds &= ~LED5_SET;
     }
 
     // Brake: use LED5 (upper Blue)
@@ -1027,14 +1047,20 @@ void sideboardLeds_R(uint8_t *leds) {
     } else if (!enable && (main_loop_counter % 20 == 0)) {
       *leds ^= LED4_SET;
     }
+ 
 
     // Backward Drive: use LED5 (upper Blue)
-    // backwardDrive == 1, blink led
+    // backwardDrive == 1, turn on
     // backwardDrive == 0, turn off led
 
-    if (backwardDrive_R & (main_loop_counter % 50 == 0)) {
-      *leds ^= LED5_SET;
+    if (backwardDrive_R) {
+      *leds |= LED5_SET;
     }
+    else
+    {
+      *leds &= ~LED5_SET;
+    }
+    
 
     // Brake: use LED5 (upper Blue)
     // brakePressed == 1, turn on led
