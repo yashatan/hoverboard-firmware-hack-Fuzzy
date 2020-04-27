@@ -59,8 +59,9 @@ extern ExtY rtY_Right;                  /* External outputs */
 //---------------
 
 extern int16_t cmd1;                    // normalized input value. -1000 to 1000
-extern int16_t cmd2;                    // normalized input value. -1000 to 1000
-
+extern int16_t cmd2;
+uint8_t freq;                    // normalized input value. -1000 to 1000
+uint8_t duration;
 extern int16_t speedAvg;                // Average measured speed
 extern int16_t speedAvgAbs;             // Average measured speed in absolute
 extern uint8_t timeoutFlagADC;          // Timeout Flag for for ADC Protection: 0 = OK, 1 = Problem detected (line disconnected or wrong ADC data)
@@ -143,9 +144,9 @@ static int16_t  speed;                 // local variable for speed. -1000 to 100
 #endif
 
 static uint32_t    inactivity_timeout_counter;
-static MultipleTap MultipleTapBreak;    // define multiple tap functiona  lity for the Break pedal
-const Fuzzy_Value Fv ={-1.0f,-0.8f,-0.65f,-0.25f,0.0f,0.25f,0.65f,0.8f,1.0f	};
-const Membership_Value Mv = {0.5,0.2,0.08};
+static MultipleTap MultipleTapBreak;    // define multiple tap functionality for the Break pedal
+const Fuzzy_Value Fv ={-1.0f,-0.85f,-0.45f,-0.2f,0.0f,0.2f,0.45f,0.85f,1.0f};
+const Membership_Value Mv = {0.6,0.25,0.09};
 int main(void) {
 
   HAL_Init();
@@ -198,7 +199,7 @@ int main(void) {
     HAL_Delay(DELAY_IN_MAIN_LOOP);        //delay in ms
     readCommand();                        // Read Command: cmd1, cmd2
     calcAvgSpeed();                  		// Calculate average measured speed: speedAvg, speedAvgAbs
-
+   
     #ifndef VARIANT_TRANSPOTTER
       // ####### MOTOR ENABLING: Only if the initial input is very small (for SAFETY) #######
       if (enable == 0 && (!rtY_Left.z_errCode && !rtY_Right.z_errCode) && (cmd1 > -50 && cmd1 < 50) && (cmd2 > -50 && cmd2 < 50)){
@@ -262,7 +263,7 @@ int main(void) {
           pwmr = speedR;
         #endif
         #ifdef INVERT_L_DIRECTION
-          pwml = -speedL;
+          pwml = speedL;
         #else
           pwml = speedL;
         #endif
@@ -285,10 +286,10 @@ int main(void) {
             #ifdef INVERT_R_DIRECTION
               pwmr = speedR;
             #else
-              pwmr = -speedR;
+              pwmr = speedR;
             #endif
             #ifdef INVERT_L_DIRECTION
-              pwml = -speedL;
+              pwml = speedL;
             #else
               pwml = speedL;
             #endif
@@ -383,13 +384,13 @@ int main(void) {
 
     // ####### DEBUG SERIAL OUT #######
     #if defined(DEBUG_SERIAL_USART2) || defined(DEBUG_SERIAL_USART3)
-      if (main_loop_counter % 25 == 0) {    // Send data periodically every 125 ms
+      if (main_loop_counter % 20 == 0) {    // Send data periodically every 125 ms
         #ifdef CONTROL_ADC
         setScopeChannel(0, (int16_t)adc_buffer.l_tx2);          // 1: ADC1
         setScopeChannel(1, (int16_t)adc_buffer.l_rx2);          // 2: ADC2
         #endif
-        setScopeChannel(2, (int16_t)speedR);                    // 3: output command: [-1000, 1000]
-        setScopeChannel(3, (int16_t)speedL);                    // 4: output command: [-1000, 1000]
+        setScopeChannel(2, (int16_t)cmd2);                    // 3: output command: [-1000, 1000]
+        setScopeChannel(3, (int16_t)rtY_Right.n_mot);                    // 4: output command: [-1000, 1000]
         setScopeChannel(4, (int16_t)adc_buffer.batt1);          // 5: for battery voltage calibration
         setScopeChannel(5, (int16_t)(batVoltage * BAT_CALIB_REAL_VOLTAGE / BAT_CALIB_ADC)); // 6: for verifying battery voltage calibration
         setScopeChannel(6, (int16_t)board_temp_adcFilt);        // 7: for board temperature calibration
@@ -465,11 +466,11 @@ int main(void) {
     } else if (BAT_LVL2_ENABLE && batVoltage < BAT_LVL2) {      // low bat 2: slow beep
       buzzerFreq    = 5;
       buzzerPattern = 42;
-    } else if (BEEPS_BACKWARD && ((speed_l < -50 && speedAvg < 0) || MultipleTapBreak.b_multipleTap)) {  // backward beep
+    } else if (BEEPS_BACKWARD && speed_l < -50) {  // backward beep
       buzzerFreq    = 0;
       buzzerPattern = 0;
       backwardDrive_L = 1;
-    } else if ((BEEPS_BACKWARD && ((speed_r < -50 && speedAvg < 0) || MultipleTapBreak.b_multipleTap))) {
+    } else if (BEEPS_BACKWARD && speed_r > 50) {
 			backwardDrive_R = 1;
 		}	else {  // do not beep
       buzzerFreq    = 0;
@@ -477,7 +478,7 @@ int main(void) {
       backwardDrive_L = 0;
 			backwardDrive_R = 0;
     }
-
+    short_beep();
 
     // ####### INACTIVITY TIMEOUT #######
     if (abs(speedL) > 50 || abs(speedR) > 50) {

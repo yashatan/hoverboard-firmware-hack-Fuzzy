@@ -59,6 +59,7 @@ void Input_Init(void);
 // General Functions
 void poweronMelody(void);
 void shortBeep(uint8_t freq);
+void short_beep();
 void shortBeepMany(uint8_t cnt);
 void longBeep(uint8_t freq);
 void calcAvgSpeed(void);
@@ -73,7 +74,7 @@ void poweroffPressCheck(void);
 // Read Command Function
 void readCommand(void);
 // Auto Level Function
-void Auto_level(float Angle, float Angle_dot, int16_t* cmd);
+void Auto_level(float Angle, float Angle_dot, int16_t* cmdx);
 // Sideboard functions
 void sideboardLeds_L(uint8_t *leds);
 void sideboardLeds_R(uint8_t *leds);

@@ -11,9 +11,9 @@ float Fuzzy(float x1,float x2,Fuzzy_Value y, Membership_Value u)
 		
 		float x1_NB = mftrap(x1,-2,-1,-u.B,-u.M);
 		float x1_NM = mftrap(x1,-u.B,-u.M,-u.M,-u.S);
-		float x1_NS = mftrap(x1,-u.M,-u.S,-u.S,-0.03);
-		float x1_ZE = mftrap(x1,-u.S,-0.03,0.03,u.S) ;
-		float x1_PS = mftrap(x1,0.03,u.S,u.S,u.M);
+		float x1_NS = mftrap(x1,-u.M,-u.S,-u.S,-0.035);
+		float x1_ZE = mftrap(x1,-u.S,-0.035,0.035,u.S) ;
+		float x1_PS = mftrap(x1,0.035,u.S,u.S,u.M);
 		float x1_PM = mftrap(x1,u.S,u.M,u.M,u.B);
 		float x1_PB = mftrap(x1,u.M,u.B,1,2);
 		float x2_NE = mftrap(x2,-2,-1,-1,0);

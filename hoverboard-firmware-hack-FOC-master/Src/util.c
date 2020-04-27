@@ -47,11 +47,13 @@ extern I2C_HandleTypeDef hi2c2;
   extern UART_HandleTypeDef huart3;
   static UART_HandleTypeDef huart;
 #endif
-
+extern uint32_t beep_count;
 extern int16_t batVoltage;
 extern uint8_t backwardDrive_L;
 extern uint8_t backwardDrive_R;
 extern uint8_t backwardDrive;
+extern uint8_t freq;                    // normalized input value. -1000 to 1000
+extern uint8_t duration;
 extern uint8_t buzzerFreq;              // global variable for the buzzer pitch. can be 1, 2, 3, 4, 5, 6, 7...
 extern uint8_t buzzerPattern;           // global variable for the buzzer pattern. can be 1, 2, 3, 4, 5, 6, 7...
 extern const Fuzzy_Value Fv;
@@ -99,7 +101,7 @@ uint8_t  ctrlModReqRaw = CTRL_MOD_REQ;
 uint8_t  ctrlModReq    = CTRL_MOD_REQ;  // Final control mode request 
 
 #if defined(VARIANT_HOVERBOARD)
-uint8_t  autoleveldeactive_flag = 0;     //when touch photosensor, deactive auto levcel function
+uint8_t  autoleveldeactive_flag = 0;     //when touch photosensor, deactivate auto level function
 uint8_t  photosensor_L;
 uint8_t  photosensor_R;
 uint8_t  firststep_flag = SET;            // when not stand 2 feet yet the controller is weak to help you not fall out
@@ -326,7 +328,7 @@ void Input_Init(void) {
     lcd.type                    = TYPE0;
 
     if(LCD_Init(&lcd)!=LCD_OK) {
-        // error occured
+        // error occurred
         //TODO while(1);
     }
 
@@ -369,6 +371,18 @@ void shortBeep(uint8_t freq) {
     buzzerFreq = freq;
     HAL_Delay(100);
     buzzerFreq = 0;
+}
+void short_beep() {
+
+if (duration != 0) {
+if (duration > 20) buzzerFreq = freq;
+else buzzerFreq = freq -2;
+duration--;
+}
+else
+{
+buzzerFreq = 0;
+}
 }
 
 void shortBeepMany(uint8_t cnt) {
@@ -418,7 +432,7 @@ void adcCalibLim(void) {
   #ifdef CONTROL_ADC
     consoleLog("ADC calibration started... ");
     
-    // Inititalization: MIN = a high values, MAX = a low value,
+    // Initialization: MIN = a high values, MAX = a low value,
     int32_t adc1_fixdt = adc_buffer.l_tx2 << 16;
     int32_t adc2_fixdt = adc_buffer.l_rx2 << 16;
     uint16_t adc_cal_timeout = 0;
@@ -477,7 +491,7 @@ void adcCalibLim(void) {
  /*
  * Update Maximum Motor Current Limit (via ADC1) and Maximum Speed Limit (via ADC2)
  * Procedure:
- * - press the power button for more than 5 sec and immediatelly after the beep sound press one more time shortly
+ * - press the power button for more than 5 sec and immediately after the beep sound press one more time shortly
  * - move and hold the pots to a desired limit position for Current and Speed
  * - press the power button to confirm or wait for the 10 sec timeout
  */
@@ -656,10 +670,23 @@ extern uint16_t init_cnt;
 /* =========================== Auto-Level Function ============================= */
 
 void Auto_level(float Angle, float Angle_dot, int16_t* cmdx)
-{
-						int16_t tmpcmd = (int16_t) ((Angle/100.0f *12.0f) +  (Angle_dot/100.0f * 1.0f));
-						*cmdx = CLAMP(tmpcmd,-90,80);
+{           static uint8_t anti_moving = RESET;
+            static uint8_t auto_count=0;
+            if (Angle < 300 && Angle >- 300) //auto_count++;
+           // if (auto_count > 50) anti_moving = SET;
+         //   if (anti_moving)
+            {
+              int16_t tmpcmd = (int16_t) ((Angle/100.0f *4.0f) +  (Angle_dot/100.0f * 0.8f));
+						  *cmdx = CLAMP(tmpcmd,-90,80);
+            }
+            else
+            {
+              int16_t tmpcmd = (int16_t) ((Angle/100.0f *10.0f) +  (Angle_dot/100.0f * 0.8f));
+						  *cmdx = CLAMP(tmpcmd,-90,80);
+            }
 }
+            
+						
 
 /* =========================== Read Command Function =========================== */
 
@@ -745,7 +772,7 @@ void readCommand(void) {
         for (uint8_t i = 0; i < (IBUS_NUM_CHANNELS * 2); i++) {
           ibus_chksum -= command.channels[i];
         }
-        if (command.start == IBUS_LENGTH && command.type == IBUS_COMMAND && ibus_chksum == (uint16_t)((command.checksumh << 8) + command.checksuml)) {
+        if (command.start == IBUS_LENGTH && command.type == IBUS_COMMAND && ibus_chksum == (uint16_t)((command.checksum << 8) + command.checksuml)) {
           if (timeoutFlagSerial) {                      // Check for previous timeout flag  
             if (timeoutCntSerial-- <= 0)                // Timeout de-qualification
               timeoutFlagSerial = 0;                    // Timeout flag cleared           
@@ -794,9 +821,11 @@ void readCommand(void) {
         #endif
 
       if (timeoutFlagSerial) {                          // In case of timeout bring the system to a Safe State
-        ctrlModReq  = 0;                                // OPEN_MODE request. This will bring the motor power to 0 in a controlled way
+        ctrlModReq  = ctrlModReqRaw;                                // OPEN_MODE request. This will bring the motor power to 0 in a controlled way
         cmd1        = 0;
-        cmd2        = 0;
+        if (main_loop_counter > 1000)
+        cmd2        = -50;
+        else cmd2 = 50;
       } else {
         ctrlModReq  = ctrlModReqRaw;                    // Follow the Mode request
       }
@@ -815,18 +844,19 @@ void readCommand(void) {
 					float Angle_dot_fuzzy =     (float)  Sideboard_L.angle_dot;
           
 					//=======Auto Level Function========//
-					if ((init_cnt++>250) && !autoleveldeactive_flag && autolevelenable_flag) Auto_level(Angle_fuzzy, Angle_dot_fuzzy, &cmd1);
+					if ((init_cnt++>300) && !autoleveldeactive_flag && autolevelenable_flag) Auto_level(Angle_fuzzy, Angle_dot_fuzzy, &cmd1);
           else cmd1=0;
-
+         //======End of Auto Level Function===//
 
 
           //=====Check Photosensor=====//
 				  if (!photosensor_L && Sideboard_L.sensors == 0x0007)
 				  {
 						if (!autoleveldeactive_flag) autoleveldeactive_flag = SET;
-						shortBeep(6);
-						shortBeep(4);
+						freq = 6;
+            duration=40;
 						photosensor_L = SET;
+            ctrlModReqRaw = 1;
             if (photosensor_R) firststep_flag =RESET;
 					}
 					else if (photosensor_L && !(Sideboard_L.sensors == 0x0007))
@@ -834,17 +864,19 @@ void readCommand(void) {
 						photosensor_L = RESET;
             if (!photosensor_R) firststep_flag = SET;
 					}
-
+          //======End of Checking Photosensor===//
 
 
           //=====Balacing Fuction with Fuzzy controller=====//  
           if (photosensor_L ==SET)
           {
             if (!firststep_flag)
-              cmd1 = (int16_t) (Fuzzy(Angle_fuzzy/7000.0f,Angle_dot_fuzzy/5000.0f,Fv,Mv) * 250);
+              cmd1 = (int16_t) (Fuzzy(Angle_fuzzy/K1,Angle_dot_fuzzy/K2,Fv,Mv) * Ku);
             else
-              cmd1 = (int16_t) (Fuzzy(Angle_fuzzy/7000.0f,Angle_dot_fuzzy/5000.0f,Fv,Mv) * 300); 
+              cmd1 = (int16_t) (Fuzzy(Angle_fuzzy/K1,Angle_dot_fuzzy/K2,Fv,Mv) * 500); 
           }
+          //=====End of Balancing Function=====//
+
 
           Sideboard_Lnew.start = 0xFFFF;              // Change the Start Frame for timeout detection in the next cycle
           timeoutCntSerial_L  = 0;                    // Reset the timeout counter         
@@ -870,24 +902,25 @@ void readCommand(void) {
             timeoutFlagSerial_R = 0;                  // Timeout flag cleared           
         } else {
           memcpy(&Sideboard_R, &Sideboard_Rnew, sizeof(Sideboard_R));	// Copy the new data 
-					float	Angle_fuzzy     =     (float)  Sideboard_L.angle;
-					float Angle_dot_fuzzy =     (float)  Sideboard_L.angle_dot;
+					float	Angle_fuzzy     =     (float)  Sideboard_R.angle;
+					float Angle_dot_fuzzy =     (float)  Sideboard_R.angle_dot;
 
 
 
           //=======Auto Level Function========//
-			    if ((init_cnt > 250) && !autoleveldeactive_flag && autolevelenable_flag)	Auto_level(Angle_fuzzy, Angle_dot_fuzzy, &cmd2);
+			    if ((init_cnt>300) && !autoleveldeactive_flag && autolevelenable_flag)	Auto_level(Angle_fuzzy, Angle_dot_fuzzy, &cmd2);
 					else cmd2 = 0;
-
+          //======End of Auto Level Function===//
 
 
           //=====Check Photosensor=====//
 				  if (!photosensor_R && Sideboard_R.sensors == 0x0007)
             {
               if (!autoleveldeactive_flag) autoleveldeactive_flag = SET;
-              shortBeep(6);
-              shortBeep(4);
+						  freq = 6;
+              duration=40;
               photosensor_R = SET;
+              ctrlModReqRaw = 1;
               if (photosensor_L) firststep_flag = RESET;
             }
             else if (photosensor_R && !(Sideboard_R.sensors == 0x0007))
@@ -895,19 +928,20 @@ void readCommand(void) {
               photosensor_R = RESET;
               if (!photosensor_L) firststep_flag = SET;
             }
+          //======End of Checking Photosensor===//
 
 
-
-          //=====Balacing Fuction with Fuzzy controller=====//  
+          //=====Balancing Function with Fuzzy controller=====//  
 				  if (photosensor_R)
 				    {
               if (!firststep_flag)
-                    cmd2 = (int16_t) (Fuzzy(Angle_fuzzy/7000.0f,Angle_dot_fuzzy/5000.0f,Fv,Mv) * 250);
+                    cmd2 = (int16_t) (Fuzzy(Angle_fuzzy/K1,Angle_dot_fuzzy/K2,Fv,Mv) * Ku);
               else 
-                    cmd2 = (int16_t) (Fuzzy(Angle_fuzzy/7000.0f,Angle_dot_fuzzy/5000.0f,Fv,Mv) * 300);
+                    cmd2 = (int16_t) (Fuzzy(Angle_fuzzy/K1,Angle_dot_fuzzy/K2,Fv,Mv) * 500);
 				    }
+          //=====End of Balancing Function=====//
 
-          Sideboard_Rnew.start = 0xFFFF;              // Change the Sart Frame for timeout detection in the next cycle
+          Sideboard_Rnew.start = 0xFFFF;              // Change the Start Frame for timeout detection in the next cycle
           timeoutCntSerial_R  = 0;                    // Reset the timeout counter         
         }
       } else {
@@ -951,8 +985,6 @@ void readCommand(void) {
         cmd2 = adc_buffer.l_rx2;
       #endif
     #endif
-
-
 
 }
 
