@@ -147,8 +147,9 @@
 // Default settings will be applied at the end of this config file if not set before
 #define INACTIVITY_TIMEOUT      	8       // Minutes of not driving until poweroff. it is not very precise.
 #define BEEPS_BACKWARD          	1       // 0 or 1
-#define FLASH_WRITE_KEY           0x1234  // Flash writing key, used when writing data to flash memory
+#define FLASH_WRITE_KEY           0x1234  // Flash writing key, used when writing data to flash memory 
 // #define SUPPORT_BUTTONS							  // Define for buttons support on ADC, Nunchuck
+#define ChargingMode
 
 /* FILTER is in fixdt(0,16,16): VAL_fixedPoint = VAL_floatingPoint * 2^16. In this case 6553 = 0.1 * 2^16
  * Value of COEFFICIENT is in fixdt(1,16,14)

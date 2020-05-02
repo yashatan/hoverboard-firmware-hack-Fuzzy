@@ -47,22 +47,24 @@ extern I2C_HandleTypeDef hi2c2;
   extern UART_HandleTypeDef huart3;
   static UART_HandleTypeDef huart;
 #endif
-extern uint32_t beep_count;
+
 extern int16_t batVoltage;
 extern uint8_t backwardDrive_L;
 extern uint8_t backwardDrive_R;
 extern uint8_t backwardDrive;
 extern uint8_t freq;                    // normalized input value. -1000 to 1000
 extern uint8_t duration;
+extern uint8_t type_of_beep;
 extern uint8_t buzzerFreq;              // global variable for the buzzer pitch. can be 1, 2, 3, 4, 5, 6, 7...
 extern uint8_t buzzerPattern;           // global variable for the buzzer pattern. can be 1, 2, 3, 4, 5, 6, 7...
 extern const Fuzzy_Value Fv;
 extern uint8_t enable;                  // global variable for motor enable
+extern uint8_t disable;
+uint16_t init_cnt;
 extern const Membership_Value Mv;
 extern uint8_t nunchuk_data[6];
 extern volatile uint32_t timeout;       // global variable for timeout
 extern volatile uint32_t main_loop_counter;
-
 #ifdef CONTROL_PPM
 extern volatile uint16_t ppm_captured_value[PPM_NUM_CHANNELS+1];
 #endif
@@ -99,7 +101,7 @@ uint8_t  timeoutFlagSerial = 0;         // Timeout Flag for Rx Serial command: 0
 
 uint8_t  ctrlModReqRaw = CTRL_MOD_REQ;
 uint8_t  ctrlModReq    = CTRL_MOD_REQ;  // Final control mode request 
-
+uint8_t  charging_led;
 #if defined(VARIANT_HOVERBOARD)
 uint8_t  autoleveldeactive_flag = 0;     //when touch photosensor, deactivate auto level function
 uint8_t  photosensor_L;
@@ -107,6 +109,10 @@ uint8_t  photosensor_R;
 uint8_t  firststep_flag = SET;            // when not stand 2 feet yet the controller is weak to help you not fall out
 uint8_t  autolevelenable_flag;            // to turn it on or off auto level function
 uint16_t  autolevelenable_save;           // to save to EEPROM
+uint16_t angle_calib_left;
+uint16_t angle_calib_right;
+int16_t angle_offset_left;
+int16_t angle_offset_right;
 uint8_t  save_hover_valid;
 #endif
 #if defined(SIDEBOARD_SERIAL_USART2)
@@ -276,7 +282,12 @@ void Input_Init(void) {
     HAL_FLASH_Unlock();    
     EE_Init();
     EE_ReadVariable(VirtAddVarTab[0], &autolevelenable_save);
+    EE_ReadVariable(VirtAddVarTab[1], &angle_calib_left);
+    EE_ReadVariable(VirtAddVarTab[2], &angle_calib_right);
+    angle_offset_left = angle_calib_left;
+    angle_offset_right = angle_calib_right;
     autolevelenable_flag = (uint8_t) autolevelenable_save;
+
     HAL_FLASH_Lock();
   #endif
 
@@ -373,16 +384,28 @@ void shortBeep(uint8_t freq) {
     buzzerFreq = 0;
 }
 void short_beep() {
-
-if (duration != 0) {
-if (duration > 20) buzzerFreq = freq;
-else buzzerFreq = freq -2;
-duration--;
-}
-else
-{
-buzzerFreq = 0;
-}
+  if (type_of_beep == 2){
+      if (duration != 0) {
+        if (duration > 20) buzzerFreq = freq;
+        else buzzerFreq = freq -2;
+      duration--;
+      }
+      else
+      {
+        buzzerFreq = 0;
+      }
+  }
+  else if (type_of_beep == 1)
+  {
+        if (duration != 0) { 
+          buzzerFreq = freq -2;
+          duration--;
+        }
+        else
+        {
+        buzzerFreq = 0;
+        }
+  }
 }
 
 void shortBeepMany(uint8_t cnt) {
@@ -563,6 +586,8 @@ void saveConfig() {
     if (save_hover_valid) {
       HAL_FLASH_Unlock();
       EE_WriteVariable(VirtAddVarTab[0], autolevelenable_save);
+      EE_WriteVariable(VirtAddVarTab[1], angle_calib_left);
+      EE_WriteVariable(VirtAddVarTab[2], angle_calib_right);
       HAL_FLASH_Lock();
     }
   #endif
@@ -585,6 +610,28 @@ void poweroff(void) {
 	while(1) {}
 }
 
+void chargerPluginCheck(void){
+  #ifdef ChargingMode
+   if(!HAL_GPIO_ReadPin(CHARGER_PORT, CHARGER_PIN)) {
+     enable = 0;
+     disable = 1;
+     autolevelenable_flag = RESET;
+     charging_led = SET;
+     if (cmd1 !=0 || cmd2 !=0)
+     {
+       type_of_beep =1;
+       freq =5;
+       duration = 10;
+     }
+   }
+   else
+   {
+     disable =0;
+     enable =1;
+     charging_led = RESET;
+   }
+ #endif  
+}
 
 void poweroffPressCheck(void) {
 	#if defined(CONTROL_ADC)
@@ -648,7 +695,13 @@ void poweroffPressCheck(void) {
             autolevelenable_save ^= 1;
             save_hover_valid = 1;
             shortBeep(5);
-          } else {                                          // Long press: Calibrate Angle
+          } else { 
+            longBeep(8);                                         // Long press: Calibrate Angle
+            angle_calib_left = Sideboard_L.angle;
+            angle_calib_right = Sideboard_R.angle;
+            
+            save_hover_valid = 1;
+            shortBeep(5);                                        
           }
         } else {                                            // Short press: power off
           poweroff();
@@ -666,15 +719,11 @@ void poweroffPressCheck(void) {
       }
     #endif
 }
-extern uint16_t init_cnt;
+
 /* =========================== Auto-Level Function ============================= */
 
 void Auto_level(float Angle, float Angle_dot, int16_t* cmdx)
-{           static uint8_t anti_moving = RESET;
-            static uint8_t auto_count=0;
-            if (Angle < 300 && Angle >- 300) //auto_count++;
-           // if (auto_count > 50) anti_moving = SET;
-         //   if (anti_moving)
+{           if (Angle < 300 && Angle >- 300)
             {
               int16_t tmpcmd = (int16_t) ((Angle/100.0f *4.0f) +  (Angle_dot/100.0f * 0.8f));
 						  *cmdx = CLAMP(tmpcmd,-90,80);
@@ -840,8 +889,8 @@ void readCommand(void) {
             timeoutFlagSerial_L = 0;                  // Timeout flag cleared           
         } else {
           memcpy(&Sideboard_L, &Sideboard_Lnew, sizeof(Sideboard_L));	// Copy the new data
-					float	Angle_fuzzy     =     (float)  Sideboard_L.angle;
-					float Angle_dot_fuzzy =     (float)  Sideboard_L.angle_dot;
+					float	Angle_fuzzy     =     (float)  (Sideboard_L.angle - angle_offset_left);
+					float Angle_dot_fuzzy =     (float)  (Sideboard_L.angle_dot);
           
 					//=======Auto Level Function========//
 					if ((init_cnt++>300) && !autoleveldeactive_flag && autolevelenable_flag) Auto_level(Angle_fuzzy, Angle_dot_fuzzy, &cmd1);
@@ -853,10 +902,10 @@ void readCommand(void) {
 				  if (!photosensor_L && Sideboard_L.sensors == 0x0007)
 				  {
 						if (!autoleveldeactive_flag) autoleveldeactive_flag = SET;
+            type_of_beep =2;
 						freq = 6;
             duration=40;
 						photosensor_L = SET;
-            ctrlModReqRaw = 1;
             if (photosensor_R) firststep_flag =RESET;
 					}
 					else if (photosensor_L && !(Sideboard_L.sensors == 0x0007))
@@ -902,7 +951,7 @@ void readCommand(void) {
             timeoutFlagSerial_R = 0;                  // Timeout flag cleared           
         } else {
           memcpy(&Sideboard_R, &Sideboard_Rnew, sizeof(Sideboard_R));	// Copy the new data 
-					float	Angle_fuzzy     =     (float)  Sideboard_R.angle;
+					float	Angle_fuzzy     =     (float)  (Sideboard_R.angle - angle_calib_right);
 					float Angle_dot_fuzzy =     (float)  Sideboard_R.angle_dot;
 
 
@@ -917,10 +966,10 @@ void readCommand(void) {
 				  if (!photosensor_R && Sideboard_R.sensors == 0x0007)
             {
               if (!autoleveldeactive_flag) autoleveldeactive_flag = SET;
+              type_of_beep =2;
 						  freq = 6;
               duration=40;
               photosensor_R = SET;
-              ctrlModReqRaw = 1;
               if (photosensor_L) firststep_flag = RESET;
             }
             else if (photosensor_R && !(Sideboard_R.sensors == 0x0007))
@@ -1030,30 +1079,42 @@ void sideboardLeds_L(uint8_t *leds) {
       }
     #endif
 
-    // Battery Level Indicator: use LED1, LED2, LED3
-    if (main_loop_counter % BAT_BLINK_INTERVAL == 0) {              //  | RED (LED1) | YELLOW (LED3) | GREEN (LED2) |
-      if (batVoltage < BAT_DEAD) {                                  //  |     0      |       0       |      0       |
-        *leds &= ~LED1_SET & ~LED3_SET & ~LED2_SET;          
-      } else if (batVoltage < BAT_LVL1) {                           //  |     B      |       0       |      0       |
-        *leds ^= LED1_SET;
-        *leds &= ~LED3_SET & ~LED2_SET;
-      } else if (batVoltage < BAT_LVL2) {                           //  |     1      |       0       |      0       |
-        *leds |= LED1_SET;
-        *leds &= ~LED3_SET & ~LED2_SET;
-      } else if (batVoltage < BAT_LVL3) {                           //  |     0      |       B       |      0       |
-        *leds ^= LED3_SET;
-        *leds &= ~LED1_SET & ~LED2_SET;
-      } else if (batVoltage < BAT_LVL4) {                           //  |     0      |       1       |      0       |
-        *leds |= LED3_SET;
-        *leds &= ~LED1_SET & ~LED2_SET;
-      } else if (batVoltage < BAT_LVL5) {                           //  |     0      |       0       |      B       |
-        *leds ^= LED2_SET;
-        *leds &= ~LED1_SET & ~LED3_SET;
-      } else{                                                      //  |     0      |       0       |      1       |
-        *leds |= LED2_SET;
-        *leds &= ~LED1_SET & ~LED3_SET;
+    if (charging_led && main_loop_counter % BAT_BLINK_INTERVAL ==0)
+    {
+      static uint8_t cnt;
+      cnt++;
+      cnt = cnt % 3;
+      *leds = 0x01 << cnt;
+    }
+    else
+    {
+        // Battery Level Indicator: use LED1, LED2, LED3
+      if (main_loop_counter % BAT_BLINK_INTERVAL == 0) {              //  | RED (LED1) | YELLOW (LED3) | GREEN (LED2) |
+        if (batVoltage < BAT_DEAD) {                                  //  |     0      |       0       |      0       |
+          *leds &= ~LED1_SET & ~LED3_SET & ~LED2_SET;          
+        } else if (batVoltage < BAT_LVL1) {                           //  |     B      |       0       |      0       |
+          *leds ^= LED1_SET;
+          *leds &= ~LED3_SET & ~LED2_SET;
+        } else if (batVoltage < BAT_LVL2) {                           //  |     1      |       0       |      0       |
+          *leds |= LED1_SET;
+          *leds &= ~LED3_SET & ~LED2_SET;
+        } else if (batVoltage < BAT_LVL3) {                           //  |     0      |       B       |      0       |
+          *leds ^= LED3_SET;
+          *leds &= ~LED1_SET & ~LED2_SET;
+        } else if (batVoltage < BAT_LVL4) {                           //  |     0      |       1       |      0       |
+          *leds |= LED3_SET;
+          *leds &= ~LED1_SET & ~LED2_SET;
+        } else if (batVoltage < BAT_LVL5) {                           //  |     0      |       0       |      B       |
+          *leds ^= LED2_SET;
+          *leds &= ~LED1_SET & ~LED3_SET;
+        } else{                                                      //  |     0      |       0       |      1       |
+          *leds |= LED2_SET;
+          *leds &= ~LED1_SET & ~LED3_SET;
+        }
       }
     }
+    
+    
 
     // Error handling
     // Critical error:  LED1 on (RED)     + high pitch beep (hadled in main)
@@ -1104,25 +1165,26 @@ void sideboardLeds_R(uint8_t *leds) {
         *leds &= ~LED5_SET;
       }
     #endif
-
-    // Display photo sensors status
-    if (main_loop_counter % BAT_BLINK_INTERVAL == 0) {              //  | RED (LED1) | YELLOW (LED3) | GREEN (LED2) |
-      if (batVoltage < BAT_DEAD) {                                  //  |     0      |       0       |      0       |
-        *leds &= ~LED1_SET & ~LED3_SET & ~LED2_SET;          
-      } else if (batVoltage < BAT_LVL1) {                           //  |     B      |       0       |      0       |
+    if(charging_led && (cmd1!=0 || cmd2!=0) && main_loop_counter % BAT_BLINK_INTERVAL == 0) {
         *leds ^= LED1_SET;
         *leds &= ~LED3_SET & ~LED2_SET;
-      } else if (!photosensor_L && !photosensor_R) {                //  |     1      |       0       |      0       |
-        *leds |= LED1_SET;
-        *leds &= ~LED3_SET & ~LED2_SET; 
-      } else if (photosensor_R ^ photosensor_L) {                   //  |     0      |       0       |      B       |
-        *leds ^= LED2_SET;
-        *leds &= ~LED3_SET & ~LED1_SET;
-      } else if (photosensor_R && photosensor_L) {                   //  |     0      |       0       |      1       |
-        *leds |= LED2_SET;
-        *leds &= ~LED1_SET & ~LED3_SET;
-      } 
     }
+    else{
+        if (main_loop_counter % BAT_BLINK_INTERVAL == 0) {              //  | RED (LED1) | YELLOW (LED3) | GREEN (LED2) |
+        if (!photosensor_L && !photosensor_R) {                       //  |     1      |       0       |      0       |
+          *leds |= LED1_SET;
+          *leds &= ~LED3_SET & ~LED2_SET; 
+        } else if (photosensor_R ^ photosensor_L) {                   //  |     0      |       0       |      B       |
+          *leds ^= LED2_SET;
+          *leds &= ~LED3_SET & ~LED1_SET;
+        } else if (photosensor_R && photosensor_L) {                   //  |     0      |       0       |      1       |
+          *leds |= LED2_SET;
+          *leds &= ~LED1_SET & ~LED3_SET;
+        } 
+      }
+    }
+    // Display photo sensors status
+
 
     // Error handling
     // Critical error:  LED1 on (RED)     + high pitch beep (hadled in main)

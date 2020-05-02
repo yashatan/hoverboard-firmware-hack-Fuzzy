@@ -70,6 +70,7 @@ void saveConfig(void);
 // Poweroff Functions
 void poweroff(void);
 void poweroffPressCheck(void);
+void chargerPluginCheck(void);
 
 // Read Command Function
 void readCommand(void);

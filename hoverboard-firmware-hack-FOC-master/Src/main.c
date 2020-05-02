@@ -62,6 +62,7 @@ extern int16_t cmd1;                    // normalized input value. -1000 to 1000
 extern int16_t cmd2;
 uint8_t freq;                    // normalized input value. -1000 to 1000
 uint8_t duration;
+uint8_t type_of_beep;
 extern int16_t speedAvg;                // Average measured speed
 extern int16_t speedAvgAbs;             // Average measured speed in absolute
 extern uint8_t timeoutFlagADC;          // Timeout Flag for for ADC Protection: 0 = OK, 1 = Problem detected (line disconnected or wrong ADC data)
@@ -74,7 +75,7 @@ extern uint8_t buzzerFreq;              // global variable for the buzzer pitch.
 extern uint8_t buzzerPattern;           // global variable for the buzzer pattern. can be 1, 2, 3, 4, 5, 6, 7...
 
 extern uint8_t enable;                  // global variable for motor enable
-
+uint8_t disable; // global variable for motor;
 extern volatile uint32_t timeout;       // global variable for timeout
 extern int16_t batVoltage;              // global variable for battery voltage
 //extern int16_t INPUT_MAX;             // [-] Input target maximum limitation
@@ -101,12 +102,6 @@ volatile uint32_t main_loop_counter;
 #if defined(FEEDBACK_SERIAL_USART2) || defined(FEEDBACK_SERIAL_USART3)
 typedef struct{
   uint16_t  start;
-  int16_t   cmd1;
-  int16_t   cmd2;
-  int16_t   speedR_meas;
-  int16_t   speedL_meas;
-  int16_t   batVoltage;
-  int16_t   boardTemp;
   uint16_t 	cmdLed;
   uint16_t  checksum;
 } SerialFeedback;
@@ -199,15 +194,14 @@ int main(void) {
     HAL_Delay(DELAY_IN_MAIN_LOOP);        //delay in ms
     readCommand();                        // Read Command: cmd1, cmd2
     calcAvgSpeed();                  		// Calculate average measured speed: speedAvg, speedAvgAbs
-   
     #ifndef VARIANT_TRANSPOTTER
       // ####### MOTOR ENABLING: Only if the initial input is very small (for SAFETY) #######
-      if (enable == 0 && (!rtY_Left.z_errCode && !rtY_Right.z_errCode) && (cmd1 > -50 && cmd1 < 50) && (cmd2 > -50 && cmd2 < 50)){
+      if (enable == 0 && (!rtY_Left.z_errCode && !rtY_Right.z_errCode) && (cmd1 > -50 && cmd1 < 50) && (cmd2 > -50 && cmd2 < 50) && !disable){
         shortBeep(6);                     // make 2 beeps indicating the motor enable
         shortBeep(4); HAL_Delay(100);
         enable = 1;                       // enable motors
       }
-
+      chargerPluginCheck();
       // ####### VARIANT_HOVERCAR ####### 
       #ifdef VARIANT_HOVERCAR
         // Calculate speed Blend, a number between [0, 1] in fixdt(0,16,15)
@@ -255,8 +249,8 @@ int main(void) {
        //speedL = CLAMP((int)(speed * SPEED_COEFFICIENT +  steer * STEER_COEFFICIENT)>>4, -1000, 1000);
        mixerFcn(speed_l << 4, speed_r << 4, &speedR, &speedL);   // This function implements the equations above
 
-      // ####### SET OUTPUTS (if the target change is less than +/- 50) #######
-      if ((speedL > lastSpeedL-50 && speedL < lastSpeedL+50) && (speedR > lastSpeedR-50 && speedR < lastSpeedR+50) && timeout < TIMEOUT) {
+      // ####### SET OUTPUTS (if the target change is less than +/- 100) #######
+      if ((speedL > lastSpeedL-70 && speedL < lastSpeedL+70) && (speedR > lastSpeedR-70 && speedR < lastSpeedR+70) && timeout < TIMEOUT) {
         #ifdef INVERT_R_DIRECTION
           pwmr = speedR;
         #else
@@ -403,26 +397,14 @@ int main(void) {
     #if defined(FEEDBACK_SERIAL_USART2) || defined(FEEDBACK_SERIAL_USART3)
       if (main_loop_counter % 2 == 0) {    // Send data periodically every 10 ms
         Feedback_L.start	        = (uint16_t)SERIAL_START_FRAME;
-        Feedback_L.cmd1           = (int16_t)cmd1;
-        Feedback_L.cmd2           = (int16_t)cmd2;
-        Feedback_L.speedR_meas	  = (int16_t)rtY_Right.n_mot;
-        Feedback_L.speedL_meas	  = (int16_t)rtY_Left.n_mot;
-        Feedback_L.batVoltage	    = (int16_t)(batVoltage * BAT_CALIB_REAL_VOLTAGE / BAT_CALIB_ADC);
-        Feedback_L.boardTemp	    = (int16_t)board_temp_deg_c;
+
 				
 			  Feedback_R.start	        = (uint16_t)SERIAL_START_FRAME;
-        Feedback_R.cmd1           = (int16_t)cmd1;
-        Feedback_R.cmd2           = (int16_t)cmd2;
-        Feedback_R.speedR_meas	  = (int16_t)rtY_Right.n_mot;
-        Feedback_R.speedL_meas	  = (int16_t)rtY_Left.n_mot;
-        Feedback_R.batVoltage	    = (int16_t)(batVoltage * BAT_CALIB_REAL_VOLTAGE / BAT_CALIB_ADC);
-        Feedback_R.boardTemp	    = (int16_t)board_temp_deg_c;
 				
         #if defined(FEEDBACK_SERIAL_USART2)
           if(DMA1_Channel7->CNDTR == 0 ) {
             Feedback_L.cmdLed         = (uint16_t)sideboard_leds_L;
-            Feedback_L.checksum       = (uint16_t)(Feedback_L.start ^ Feedback_L.cmd1 ^ Feedback_L.cmd2 ^ Feedback_L.speedR_meas ^ Feedback_L.speedL_meas 
-                                               ^ Feedback_L.batVoltage ^ Feedback_L.boardTemp ^ Feedback_L.cmdLed);
+            Feedback_L.checksum       = (uint16_t)(Feedback_L.start ^ Feedback_L.cmdLed);
             DMA1_Channel7->CCR     &= ~DMA_CCR_EN;
             DMA1_Channel7->CNDTR    = sizeof(Feedback_L);
             DMA1_Channel7->CMAR     = (uint32_t)&Feedback_L;
@@ -432,8 +414,7 @@ int main(void) {
         #if defined(FEEDBACK_SERIAL_USART3)
           if(DMA1_Channel2->CNDTR == 0 ) {
             Feedback_R.cmdLed         = (uint16_t)sideboard_leds_R;
-            Feedback_R.checksum       = (uint16_t)(Feedback_R.start ^ Feedback_R.cmd1 ^ Feedback_R.cmd2 ^ Feedback_R.speedR_meas ^ Feedback_R.speedL_meas 
-                                               ^ Feedback_R.batVoltage ^ Feedback_R.boardTemp ^ Feedback_R.cmdLed);
+            Feedback_R.checksum       = (uint16_t)(Feedback_R.start ^ Feedback_R.cmdLed);
             DMA1_Channel2->CCR     &= ~DMA_CCR_EN;
             DMA1_Channel2->CNDTR    = sizeof(Feedback_R);
             DMA1_Channel2->CMAR     = (uint32_t)&Feedback_R;
