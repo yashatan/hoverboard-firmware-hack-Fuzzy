@@ -889,7 +889,7 @@ void readCommand(void) {
             timeoutFlagSerial_L = 0;                  // Timeout flag cleared           
         } else {
           memcpy(&Sideboard_L, &Sideboard_Lnew, sizeof(Sideboard_L));	// Copy the new data
-					float	Angle_fuzzy     =     (float)  (Sideboard_L.angle - angle_offset_left);
+					float	Angle_fuzzy     =     (float)  (Sideboard_L.angle);// - angle_offset_left);
 					float Angle_dot_fuzzy =     (float)  (Sideboard_L.angle_dot);
           
 					//=======Auto Level Function========//
@@ -951,7 +951,7 @@ void readCommand(void) {
             timeoutFlagSerial_R = 0;                  // Timeout flag cleared           
         } else {
           memcpy(&Sideboard_R, &Sideboard_Rnew, sizeof(Sideboard_R));	// Copy the new data 
-					float	Angle_fuzzy     =     (float)  (Sideboard_R.angle - angle_calib_right);
+					float	Angle_fuzzy     =     (float)  (Sideboard_R.angle);// - angle_calib_right);
 					float Angle_dot_fuzzy =     (float)  Sideboard_R.angle_dot;
 
 

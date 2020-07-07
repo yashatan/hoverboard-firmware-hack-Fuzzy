@@ -60,7 +60,7 @@ extern ExtY rtY_Right;                  /* External outputs */
 
 extern int16_t cmd1;                    // normalized input value. -1000 to 1000
 extern int16_t cmd2;
-uint8_t freq;                    // normalized input value. -1000 to 1000
+uint8_t freq;               
 uint8_t duration;
 uint8_t type_of_beep;
 extern int16_t speedAvg;                // Average measured speed
@@ -140,8 +140,8 @@ static int16_t  speed;                 // local variable for speed. -1000 to 100
 
 static uint32_t    inactivity_timeout_counter;
 static MultipleTap MultipleTapBreak;    // define multiple tap functionality for the Break pedal
-const Fuzzy_Value Fv ={-1.0f,-0.85f,-0.45f,-0.2f,0.0f,0.2f,0.45f,0.85f,1.0f};
-const Membership_Value Mv = {0.6,0.25,0.09};
+const Fuzzy_Value Fv ={-1.0f,-0.9f,-0.5f,-0.125f,0.0f,0.125f,0.5f,0.9f,1.0f};
+const Membership_Value Mv = {0.45,0.35,0.1};
 int main(void) {
 
   HAL_Init();
